@@ -1,0 +1,16 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Testing and environment
+.pytest_cache/
+.env
+tests/fixtures/sample.*
+/tmp/multimodal_embedding_api/

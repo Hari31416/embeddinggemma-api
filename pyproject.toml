@@ -1,0 +1,29 @@
+[project]
+name = "multimodal-embedding-api"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "av>=18.1.0",
+    "black>=26.10.0",
+    "fastapi>=0.143.0",
+    "httpx>=0.28.1",
+    "librosa>=0.11.0",
+    "pillow>=12.3.0",
+    "pydantic>=2.14.0",
+    "pydantic-settings>=2.15.0",
+    "pytest>=9.1.1",
+    "python-multipart>=0.0.32",
+    "sentence-transformers>=6.1.0",
+    "soundfile>=0.14.0",
+    "torch>=2.14.1",
+    "torchaudio>=2.11.0",
+    "torchcodec>=0.17.0",
+    "torchvision>=0.29.1",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "src"]
+testpaths = ["tests"]
