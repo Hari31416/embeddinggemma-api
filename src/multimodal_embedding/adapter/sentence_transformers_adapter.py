@@ -51,6 +51,16 @@ class SentenceTransformersAdapter(ModelAdapter):
                 logger.warning(
                     "MPS device requested but not available. Falling back to CPU."
                 )
+        elif self._requested_device == "cuda":
+            if cuda_available:
+                self._actual_device = "cuda"
+                self._device_fallback = False
+            else:
+                self._actual_device = "cpu"
+                self._device_fallback = True
+                logger.warning(
+                    "CUDA device requested but not available. Falling back to CPU."
+                )
         elif self._requested_device == "cpu":
             self._actual_device = "cpu"
             self._device_fallback = False

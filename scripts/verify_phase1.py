@@ -24,6 +24,11 @@ def probe_device(requested_device: str = "auto") -> tuple[torch.device, str]:
             return torch.device("mps"), "mps"
         logger.warning("MPS requested but not available. Falling back to CPU.")
         return torch.device("cpu"), "cpu (fallback from mps)"
+    elif requested_device == "cuda":
+        if cuda_available:
+            return torch.device("cuda"), "cuda"
+        logger.warning("CUDA requested but not available. Falling back to CPU.")
+        return torch.device("cpu"), "cpu (fallback from cuda)"
     elif requested_device == "cpu":
         return torch.device("cpu"), "cpu"
     elif requested_device == "auto":
