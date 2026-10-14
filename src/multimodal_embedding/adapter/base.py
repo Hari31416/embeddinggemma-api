@@ -8,6 +8,7 @@ class PreparedMedia:
     upload_id: str
     filepath: str
     modality: str  # "image", "audio", "video"
+    frame_paths: list[str] | None = None
 
 
 @dataclass
@@ -24,7 +25,11 @@ class PreparedItem:
         # If media only or mixed
         images = [m.filepath for m in self.media if m.modality == "image"]
         audios = [m.filepath for m in self.media if m.modality == "audio"]
-        videos = [m.filepath for m in self.media if m.modality == "video"]
+        videos = [
+            m.frame_paths if m.frame_paths is not None else m.filepath
+            for m in self.media
+            if m.modality == "video"
+        ]
 
         payload: dict[str, Any] = {}
         if self.text is not None:
@@ -91,5 +96,6 @@ class ModelAdapter(ABC):
         items: list[PreparedItem],
         task: str = "document",
         truncate_dim: int | None = None,
+        prompt_mode: str = "auto",
     ) -> list[list[float]]:
         pass

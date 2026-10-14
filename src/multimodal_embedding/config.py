@@ -22,14 +22,14 @@ class Settings(BaseSettings):
         description="Hugging Face model identifier",
     )
     model_revision: str = Field(
-        default="main",
+        default="914f7f89142e33e77833254d9c9b90c3cef7303b",
         description="Model revision or commit hash",
     )
     device: Literal["cpu", "mps", "auto"] = Field(
         default="auto",
         description="Target compute device: cpu, mps, or auto",
     )
-    torch_dtype: str = Field(
+    torch_dtype: Literal["float32", "bfloat16"] = Field(
         default="float32",
         description="Torch dtype: float32 or bfloat16",
     )
@@ -74,14 +74,18 @@ class Settings(BaseSettings):
     # Media dimensions and duration limits
     max_image_pixels: int = Field(
         default=16777216,  # 4096 * 4096
+        ge=1,
         description="Maximum total pixel count for decoded images",
     )
     max_audio_duration_seconds: float = Field(
-        default=300.0,  # 5 minutes
+        default=30.0,
+        gt=0,
+        le=30.0,
         description="Maximum allowed audio duration in seconds",
     )
     max_video_duration_seconds: float = Field(
         default=60.0,  # 1 minute
+        gt=0,
         description="Maximum allowed video duration in seconds",
     )
 
@@ -98,12 +102,15 @@ class Settings(BaseSettings):
         le=120,
         description="Maximum frames sampled from video",
     )
-    vision_max_soft_tokens: int = Field(
+    vision_max_soft_tokens: Literal[70, 140, 280, 560, 1120] = Field(
         default=280,
         description="Soft token budget per image or video frame: 70, 140, 280, 560, 1120",
     )
+    video_max_soft_tokens: Literal[70, 140, 280, 560, 1120] = 140
     max_context_tokens: int = Field(
         default=8192,
+        ge=1,
+        le=8192,
         description="Context window budget shared across all modalities",
     )
 

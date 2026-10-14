@@ -15,6 +15,7 @@ from multimodal_embedding.schemas import (
     MediaPart,
     TextPart,
     UsageInfo,
+    VideoFramesPart,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,24 @@ async def create_embeddings(
         for part in item.parts:
             if isinstance(part, TextPart):
                 text_segments.append(part.text)
+            elif isinstance(part, VideoFramesPart):
+                if len(part.upload_ids) > cfg.max_video_frames:
+                    raise PayloadTooLargeError(
+                        "Video frame group exceeds max_video_frames."
+                    )
+                paths = []
+                for upload_id in part.upload_ids:
+                    record = await storage.get_upload(upload_id)
+                    if record.modality != "image":
+                        raise InvalidInputError(
+                            "Video frames must reference image uploads."
+                        )
+                    paths.append(str(record.filepath))
+                media_list.append(
+                    PreparedMedia(
+                        upload_id="", filepath="", modality="video", frame_paths=paths
+                    )
+                )
             elif isinstance(part, MediaPart):
                 record = await storage.get_upload(part.upload_id)
                 media_list.append(
@@ -98,6 +117,7 @@ async def create_embeddings(
         prepared_items,
         task=payload.task,
         truncate_dim=payload.truncate_dim,
+        prompt_mode=payload.prompt_mode,
     )
 
     duration_ms = (time.time() - t0) * 1000.0

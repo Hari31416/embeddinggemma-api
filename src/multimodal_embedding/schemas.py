@@ -40,6 +40,7 @@ class ConfiguredLimits(BaseModel):
     video_fps: int
     max_video_frames: int
     vision_max_soft_tokens: int
+    video_max_soft_tokens: int
 
 
 class ModelInfo(BaseModel):
@@ -79,7 +80,14 @@ class MediaPart(BaseModel):
     upload_id: str = Field(min_length=1)
 
 
-ContentPart = Annotated[Union[TextPart, MediaPart], Field(discriminator="type")]
+class VideoFramesPart(BaseModel):
+    type: Literal["video_frames"]
+    upload_ids: list[str] = Field(min_length=1)
+
+
+ContentPart = Annotated[
+    Union[TextPart, MediaPart, VideoFramesPart], Field(discriminator="type")
+]
 
 
 class ItemRequest(BaseModel):
@@ -91,6 +99,7 @@ class EmbeddingRequest(BaseModel):
     items: list[ItemRequest] = Field(min_length=1)
     task: Literal["query", "document"] = "document"
     truncate_dim: Literal[128, 256, 512, 768] | None = None
+    prompt_mode: Literal["auto", "none"] = "auto"
 
 
 class ItemEmbedding(BaseModel):

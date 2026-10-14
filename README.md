@@ -1,4 +1,4 @@
-# Multimodal Embedding API
+# EmbeddingGemma API
 
 Standalone FastAPI embedding service for `google/embeddinggemma-2` using Sentence Transformers. The service maps text, image, audio, video, and combined inputs into a single shared 768-dimensional embedding space with support for Matryoshka Representation Learning (MRL) truncation.
 
@@ -99,9 +99,13 @@ Key configuration options:
 - `MAX_UPLOAD_BYTES`: Maximum size for uploaded media in bytes (default: `52428800` = 50 MB).
 - `UPLOAD_TTL_SECONDS`: Upload expiration in seconds (default: `300`).
 - `MAX_IMAGE_PIXELS`: Maximum decoded image pixels (default: `16777216` = 4096x4096).
-- `MAX_AUDIO_DURATION_SECONDS`: Maximum allowed audio duration (default: `300.0`).
+- `MAX_AUDIO_DURATION_SECONDS`: Maximum allowed audio duration (default: `30.0`, cannot exceed the model window).
 - `MAX_VIDEO_DURATION_SECONDS`: Maximum allowed video duration (default: `60.0`).
-- `MAX_CONTEXT_TOKENS`: Shared token budget across all modalities (default: `8192`).
+- `MAX_CONTEXT_TOKENS`: Shared token budget across all modalities (default: `8192`). The service checks actual processor token IDs, including prompts and media, before inference and returns 413 when exceeded.
+- `VIDEO_FPS`: Target sampling rate for raw video uploads (default: `1`).
+- `MAX_VIDEO_FRAMES`: Maximum sampled frames or supplied frames per video group (default: `32`). Raw video sampling spreads these frames across the clip when the target rate would exceed the cap.
+- `VISION_MAX_SOFT_TOKENS`: Token budget per image (default: `280`).
+- `VIDEO_MAX_SOFT_TOKENS`: Token budget per video frame (default: `140`, matching the pinned checkpoint).
 
 ## Running the Service
 
@@ -178,7 +182,7 @@ Response `200 OK`:
   "data": [
     {
       "id": "google/embeddinggemma-2",
-      "revision": "main",
+      "revision": "914f7f89142e33e77833254d9c9b90c3cef7303b",
       "actual_device": "mps",
       "requested_device": "auto",
       "device_fallback": false,
@@ -188,14 +192,15 @@ Response `200 OK`:
         "max_batch_size": 32,
         "max_upload_bytes": 52428800,
         "max_image_pixels": 16777216,
-        "max_audio_duration_seconds": 300.0,
+        "max_audio_duration_seconds": 30.0,
         "max_video_duration_seconds": 60.0,
         "max_context_tokens": 8192,
         "max_concurrency": 1,
         "max_queue_size": 10,
         "video_fps": 1,
         "max_video_frames": 32,
-        "vision_max_soft_tokens": 280
+        "vision_max_soft_tokens": 280,
+        "video_max_soft_tokens": 140
       }
     }
   ]
@@ -206,7 +211,7 @@ Response `200 OK`:
 
 #### `POST /v1/uploads`
 
-Uploads an image, audio, or video file for subsequent embedding requests. Files are stored in a bounded temporary directory with automatic expiration.
+Uploads an image, audio, or video file for subsequent embedding requests. Each file is size-limited and stored temporarily with automatic expiration.
 
 Request: `multipart/form-data` with form field `file`.
 
@@ -245,6 +250,8 @@ Request Body:
     - Text part: `{"type": "text", "text": "..."}`
     - Media part: `{"type": "media", "upload_id": "<upload_id>"}`
 - `task` (optional): `query` or `document` (default: `document`).
+- `prompt_mode` (optional): `auto` applies the model's query/document prompt; `none` accepts already formatted text without adding another prompt.
+- Video frame part: `{"type": "video_frames", "upload_ids": ["<image_upload_id>", "<image_upload_id>"]}`. Image uploads are treated as one ordered video sequence, without resampling.
 - `truncate_dim` (optional): `768`, `512`, `256`, or `128` for MRL truncation with re-normalization.
 
 #### Example 1: Text Query
@@ -322,7 +329,7 @@ Response `200 OK`:
 ```json
 {
   "model": "google/embeddinggemma-2",
-  "revision": "main",
+  "revision": "914f7f89142e33e77833254d9c9b90c3cef7303b",
   "task": "document",
   "dimension": 256,
   "normalized": true,
@@ -401,3 +408,23 @@ A complete client script demonstrates checking health, querying model metadata, 
 ```bash
 uv run python scripts/client_example.py http://127.0.0.1:8000
 ```
+
+## Search-anything integration
+
+This repository is checked out at `search-anything/embeddinggemma-api` as a Git submodule. For a fresh parent checkout, run `git submodule update --init --recursive`.
+
+The default model revision is pinned to `914f7f89142e33e77833254d9c9b90c3cef7303b`, matching the worker's existing index. Clients must check `/v1/models` for the expected model, revision, and 768-dimensional output before using the service with that index.
+
+Worker-generated document text already contains `title: ... | text: ...`. Send it with `prompt_mode: "none"`. Plain query text uses `task: "query"` with `prompt_mode: "auto"`. For worker-prepared media and combined inputs, use `prompt_mode: "none"` to match existing embeddings. Upload audio windows of at most 30 seconds. Upload prepared images individually and reference them in a `video_frames` part to preserve the worker's selected frame order.
+
+Keep the pinned tokenizer in the worker for token counting and offsets used by chunk planning. The service performs the final context-budget check with the model processor. Tokenization does not require loading model weights.
+
+The service contract is ready for an HTTP client; the parent worker still uses its local adapter until that client is configured. Query prioritization and cross-request dynamic batching are not implemented.
+
+Run the regression tests, including real CPU inference and parity with the parent worker adapter:
+
+```bash
+HF_HUB_OFFLINE=1 RUN_REAL_MODEL_TESTS=1 uv run pytest -q
+```
+
+The worker parity test runs when the service is inside the parent checkout. MPS verification requires a process with MPS access. CPU tests verify document, query, image, audio, video frame groups, and combined embeddings against the actual worker adapter. Tests also cover cancelled requests, oversized context, and audio-window rejection.

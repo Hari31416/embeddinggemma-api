@@ -61,6 +61,7 @@ class FakeModelAdapter(ModelAdapter):
         items: list[PreparedItem],
         task: str = "document",
         truncate_dim: int | None = None,
+        prompt_mode: str = "auto",
     ) -> list[list[float]]:
         if not self._is_ready:
             raise ModelUnavailableError("Fake model adapter is not ready.")
@@ -96,6 +97,7 @@ class FakeModelAdapter(ModelAdapter):
                 "item_count": len(items),
                 "task": task,
                 "truncate_dim": truncate_dim,
+                "prompt_mode": prompt_mode,
                 "items": [item.id for item in items],
             }
         )

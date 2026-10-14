@@ -23,6 +23,7 @@ async def list_models(request: Request) -> ModelsResponse:
         video_fps=cfg.video_fps,
         max_video_frames=cfg.max_video_frames,
         vision_max_soft_tokens=cfg.vision_max_soft_tokens,
+        video_max_soft_tokens=cfg.video_max_soft_tokens,
     )
 
     info = ModelInfo(

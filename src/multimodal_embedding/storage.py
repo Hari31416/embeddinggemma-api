@@ -11,7 +11,7 @@ from PIL import Image
 import soundfile as sf
 import av
 
-from multimodal_embedding.config import settings
+from multimodal_embedding.config import Settings, settings as global_settings
 from multimodal_embedding.exceptions import (
     InvalidInputError,
     NotFoundError,

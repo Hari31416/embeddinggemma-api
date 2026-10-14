@@ -16,6 +16,7 @@ async def upload_media(
     file: UploadFile = File(...),
 ) -> UploadResponse:
     storage = request.app.state.storage
+    cfg = request.app.state.settings
 
     if not file.filename:
         raise InvalidInputError("File must have a filename.")
@@ -29,9 +30,9 @@ async def upload_media(
         if not chunk:
             break
         total_bytes += len(chunk)
-        if total_bytes > settings.max_upload_bytes:
+        if total_bytes > cfg.max_upload_bytes:
             raise PayloadTooLargeError(
-                f"Uploaded file exceeds maximum allowed limit of {settings.max_upload_bytes} bytes."
+                f"Uploaded file exceeds maximum allowed limit of {cfg.max_upload_bytes} bytes."
             )
         content_chunks.append(chunk)
 

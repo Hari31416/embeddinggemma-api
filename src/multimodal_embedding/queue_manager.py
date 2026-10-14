@@ -1,12 +1,12 @@
 import asyncio
 import logging
 from typing import Callable, TypeVar
+
 import anyio
 
 from multimodal_embedding.exceptions import QueueSaturationError
 
 logger = logging.getLogger(__name__)
-
 T = TypeVar("T")
 
 
@@ -17,7 +17,6 @@ class InferenceQueueManager:
         self._semaphore = asyncio.Semaphore(max_concurrency)
         self._waiting_count = 0
         self._active_count = 0
-        self._lock = asyncio.Lock()
 
     @property
     def queue_depth(self) -> int:
@@ -28,37 +27,39 @@ class InferenceQueueManager:
         return self._active_count
 
     async def run(self, func: Callable[..., T], *args, **kwargs) -> T:
-        # Check if queue has space
-        async with self._lock:
-            if self._waiting_count >= self.max_queue_size:
-                logger.warning(
-                    "Queue saturation: waiting=%d >= max_queue_size=%d",
-                    self._waiting_count,
-                    self.max_queue_size,
-                )
-                raise QueueSaturationError(
-                    f"Inference queue saturated. Currently {self._waiting_count} requests waiting. Max capacity is {self.max_queue_size}."
-                )
-            self._waiting_count += 1
-
+        # These counters are only accessed on the event loop, without awaits.
+        if (
+            self._active_count + self._waiting_count
+            >= self.max_concurrency + self.max_queue_size
+        ):
+            raise QueueSaturationError("Inference queue saturated.")
+        self._waiting_count += 1
         try:
-            async with self._semaphore:
-                async with self._lock:
-                    self._waiting_count -= 1
-                    self._active_count += 1
+            await self._semaphore.acquire()
+        finally:
+            # Cancelled waiters must release their queue reservation too.
+            self._waiting_count -= 1
+        self._active_count += 1
+        try:
+            # Shield native asyncio cancellation as well as AnyIO cancellation.
+            # A running inference thread cannot be stopped; retain its slot until done.
+            work = asyncio.create_task(
+                anyio.to_thread.run_sync(lambda: func(*args, **kwargs))
+            )
+            try:
+                return await asyncio.shield(work)
+            except asyncio.CancelledError:
 
-                try:
-                    # Run blocking inference in worker thread outside async event loop
-                    result = await anyio.to_thread.run_sync(
-                        lambda: func(*args, **kwargs)
-                    )
-                    return result
-                finally:
-                    async with self._lock:
-                        self._active_count -= 1
-        except Exception:
-            # In case acquire failed or raised before entering block
-            async with self._lock:
-                if self._waiting_count > 0 and self._active_count == 0:
-                    pass
-            raise
+                def release_when_done(task):
+                    if not task.cancelled():
+                        task.exception()
+                    self._active_count -= 1
+                    self._semaphore.release()
+
+                work.add_done_callback(release_when_done)
+                work = None
+                raise
+        finally:
+            if work is not None:
+                self._active_count -= 1
+                self._semaphore.release()

@@ -1,7 +1,7 @@
 [project]
-name = "multimodal-embedding-api"
+name = "embeddinggemma-api"
 version = "0.1.0"
-description = "Add your description here"
+description = "Pinned EmbeddingGemma-2 inference for text and media"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -27,3 +27,13 @@ dependencies = [
 [tool.pytest.ini_options]
 pythonpath = [".", "src"]
 testpaths = ["tests"]
+
+[project.scripts]
+embeddinggemma-api = "multimodal_embedding.server:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
