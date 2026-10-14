@@ -347,3 +347,88 @@ def test_cancelled_inference_keeps_request_media_until_thread_done(
         assert not list(test_settings.upload_dir.iterdir())
 
     asyncio.run(check())
+
+
+def test_multipart_video_frame_order_reuse_and_cleanup(client, png, monkeypatch):
+    seen = []
+
+    def encode(items, **kwargs):
+        frames = items[0].media[0].frame_paths
+        assert frames[0] == frames[2]
+        assert frames[0] != frames[1]
+        names = {
+            str(record.filepath): record.filename
+            for record in client.app.state.storage.uploads.values()
+        }
+        assert [names[frame] for frame in frames] == [
+            "second.png",
+            "first.png",
+            "second.png",
+        ]
+        seen.extend(frames)
+        return [[0.0] * 768]
+
+    monkeypatch.setattr(client.app.state.adapter, "encode", encode)
+    response = client.post(
+        "/v1/embeddings",
+        data={
+            "payload": json.dumps(
+                payload(
+                    {"type": "video_frames", "files": ["second", "first", "second"]}
+                )
+            )
+        },
+        files=[
+            ("first", ("first.png", png, "image/png")),
+            ("second", ("second.png", png, "image/png")),
+        ],
+    )
+    assert response.status_code == 200, response.text
+    assert len(seen) == 3
+    assert not client.app.state.storage.uploads
+    assert not list(client.app.state.settings.upload_dir.iterdir())
+
+
+@pytest.mark.parametrize(
+    "part",
+    [
+        {"type": "video_frames"},
+        {"type": "video_frames", "files": []},
+        {"type": "video_frames", "files": [""]},
+        {"type": "video_frames", "files": ["missing"]},
+        {"type": "video_frames", "files": ["a"], "upload_ids": ["b"]},
+    ],
+)
+def test_invalid_video_frame_references(client, part):
+    response = client.post("/v1/embeddings", json=payload(part))
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_input"
+
+
+def test_multipart_video_frame_limit(client, png):
+    count = client.app.state.settings.max_video_frames + 1
+    response = client.post(
+        "/v1/embeddings",
+        data={
+            "payload": json.dumps(
+                payload({"type": "video_frames", "files": ["frame"] * count})
+            )
+        },
+        files={"frame": ("a.png", png, "image/png")},
+    )
+    assert response.status_code == 413
+    assert not client.app.state.storage.uploads
+
+
+def test_multipart_video_rejects_audio_frames(client, fixtures_dir):
+    response = client.post(
+        "/v1/embeddings",
+        data={
+            "payload": json.dumps(payload({"type": "video_frames", "files": ["audio"]}))
+        },
+        files={
+            "audio": ("a.wav", (fixtures_dir / "sample.wav").read_bytes(), "audio/wav")
+        },
+    )
+    assert response.status_code == 400
+    assert not client.app.state.storage.uploads

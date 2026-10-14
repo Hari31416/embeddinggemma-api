@@ -277,7 +277,7 @@ curl http://127.0.0.1:8000/v1/embeddings \
   -F 'photo=@tests/fixtures/sample.png;type=image/png'
 ```
 
-`file` references the form field name, not the filename. Multiple items can reference the same field. File field names must be unique and every supplied file must be referenced. The `payload` field is reserved. A request can mix multipart references with upload IDs, URLs, base64, and text. The existing `video_frames.upload_ids` contract remains available for prepared image sequences.
+`file` references the form field name, not the filename. Multiple items can reference the same field. File field names must be unique and every supplied file must be referenced. The `payload` field is reserved. A request can mix multipart references with upload IDs, URLs, base64, and text. For prepared image sequences, use `{"type":"video_frames","files":["frame_0","frame_1"]}` and supply matching multipart fields. The array determines frame order, regardless of multipart field order. Repeated references are allowed. Each reference must point to an image and the group must respect `MAX_VIDEO_FRAMES`. Supply exactly one of `files` or the existing `upload_ids` array.
 
 URL example:
 

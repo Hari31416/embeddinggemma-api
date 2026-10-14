@@ -37,7 +37,6 @@ async def create_embeddings(
     inputs: tuple = Depends(parse_embedding_request),
 ) -> EmbeddingResponse:
     payload, resolver = inputs
-    storage = request.app.state.storage
     adapter = request.app.state.adapter
     queue_manager = request.app.state.queue_manager
     cfg = getattr(request.app.state, "settings", settings)
@@ -60,17 +59,20 @@ async def create_embeddings(
             if isinstance(part, TextPart):
                 text_segments.append(part.text)
             elif isinstance(part, VideoFramesPart):
-                if len(part.upload_ids) > cfg.max_video_frames:
+                references = part.files if part.files is not None else part.upload_ids
+                if len(references) > cfg.max_video_frames:
                     raise PayloadTooLargeError(
                         "Video frame group exceeds max_video_frames."
                     )
                 paths = []
-                for upload_id in part.upload_ids:
-                    record = await storage.get_upload(upload_id)
+                for reference in references:
+                    record = await resolver.resolve(
+                        MediaPart(type="media", file=reference)
+                        if part.files is not None
+                        else MediaPart(type="media", upload_id=reference)
+                    )
                     if record.modality != "image":
-                        raise InvalidInputError(
-                            "Video frames must reference image uploads."
-                        )
+                        raise InvalidInputError("Video frames must reference images.")
                     paths.append(str(record.filepath))
                 media_list.append(
                     PreparedMedia(

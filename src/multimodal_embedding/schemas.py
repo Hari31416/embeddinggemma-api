@@ -117,7 +117,18 @@ class MediaPart(BaseModel):
 
 class VideoFramesPart(BaseModel):
     type: Literal["video_frames"]
-    upload_ids: list[str] = Field(min_length=1)
+    model_config = {"extra": "forbid"}
+
+    upload_ids: list[str] | None = Field(default=None, min_length=1)
+    files: list[str] | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def one_frame_source(self):
+        if (self.upload_ids is None) == (self.files is None):
+            raise ValueError("Video frames require exactly one of upload_ids or files.")
+        if any(not name for name in (self.files or self.upload_ids)):
+            raise ValueError("Video frame references must not be empty.")
+        return self
 
 
 ContentPart = Annotated[

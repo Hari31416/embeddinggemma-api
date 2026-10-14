@@ -9,7 +9,7 @@ from starlette.requests import Request as StarletteRequest
 
 from multimodal_embedding.exceptions import InvalidInputError, PayloadTooLargeError
 from multimodal_embedding.media_inputs import MediaResolver
-from multimodal_embedding.schemas import EmbeddingRequest, MediaPart
+from multimodal_embedding.schemas import EmbeddingRequest, MediaPart, VideoFramesPart
 
 
 def request_body_schema():
@@ -44,7 +44,7 @@ def request_body_schema():
                         "properties": {
                             "payload": {
                                 "type": "string",
-                                "description": "JSON EmbeddingRequest; media.file references a named binary field",
+                                "description": "JSON EmbeddingRequest; media.file and video_frames.files reference named binary fields",
                             }
                         },
                         "additionalProperties": {"type": "string", "format": "binary"},
@@ -112,9 +112,16 @@ async def parse_embedding_request(request: Request):
             for part in item.parts
             if isinstance(part, MediaPart) and part.file is not None
         }
+        referenced.update(
+            name
+            for item in payload.items
+            for part in item.parts
+            if isinstance(part, VideoFramesPart)
+            for name in (part.files or [])
+        )
         if referenced != set(files):
             raise InvalidInputError(
-                "Multipart file fields must match the media.file references exactly."
+                "Multipart file fields must match media.file and video_frames.files references exactly."
             )
         resolver = MediaResolver(request.app.state.storage, cfg, files)
         yield payload, resolver
