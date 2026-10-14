@@ -91,6 +91,7 @@ Key configuration options:
 - `HOST`: Host interface to bind (default: `127.0.0.1`).
 - `PORT`: Port to listen on (default: `8000`).
 - `DEVICE`: Target compute device: `cpu`, `mps`, `cuda`, or `auto` (default: `auto`). Auto prefers MPS, then CUDA, then CPU. Explicit MPS or CUDA requests fall back to CPU when unavailable; `/health/ready` reports `actual_device` and `device_fallback`.
+- `SEARCH_EMBEDDING_API_KEYS`: JSON list of accepted bearer keys, for example `'["key-one","key-two"]'`. Unset, `[]`, or an empty value disables authentication. Blank entries are rejected. When enabled, `/v1/models`, `/v1/uploads`, and `/v1/embeddings` require `Authorization: Bearer <key>` and return `401` for missing or invalid credentials. Health endpoints remain public. Use HTTPS for remote access and keep keys out of source control.
 - `TORCH_DTYPE`: Numerical precision: `float32` or `bfloat16` (default: `float32`).
 - `USE_FAKE_ADAPTER`: Set `true` to use mock adapter for fast testing without loading weights (default: `false`).
 - `MAX_CONCURRENCY`: Concurrency limit for active inference (default: `1`).

@@ -2,7 +2,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
-from fastapi import FastAPI, Request, status
+from fastapi import Depends, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -12,6 +12,7 @@ from multimodal_embedding.adapter.sentence_transformers_adapter import (
     SentenceTransformersAdapter,
 )
 from multimodal_embedding.config import Settings, settings as global_settings
+from multimodal_embedding.auth import require_api_key
 from multimodal_embedding.exceptions import APIException
 from multimodal_embedding.queue_manager import InferenceQueueManager
 from multimodal_embedding.routes import (
@@ -117,6 +118,7 @@ def create_app(
         )
         return JSONResponse(
             status_code=exc.status_code,
+            headers={"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None,
             content={
                 "error": {
                     "code": exc.code,
@@ -175,9 +177,10 @@ def create_app(
 
     # Register Routers
     app.include_router(health_router)
-    app.include_router(models_router)
-    app.include_router(uploads_router)
-    app.include_router(embeddings_router)
+    authentication = [Depends(require_api_key)] if cfg.api_keys else []
+    app.include_router(models_router, dependencies=authentication)
+    app.include_router(uploads_router, dependencies=authentication)
+    app.include_router(embeddings_router, dependencies=authentication)
 
     return app
 

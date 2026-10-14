@@ -1,8 +1,9 @@
 import os
+import json
 from pathlib import Path
-from typing import Literal
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Annotated, Literal
+from pydantic import Field, SecretStr, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -10,11 +11,31 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     # Server settings
     host: str = Field(default="127.0.0.1", description="Host to bind server")
     port: int = Field(default=8000, description="Port to bind server")
+    api_keys: Annotated[list[SecretStr], NoDecode] = Field(
+        default_factory=list,
+        validation_alias="SEARCH_EMBEDDING_API_KEYS",
+        description="Accepted bearer keys; an empty list disables authentication",
+    )
+
+    @field_validator("api_keys", mode="before")
+    @classmethod
+    def parse_api_keys(cls, value):
+        if isinstance(value, str):
+            value = json.loads(value) if value.strip() else []
+        return value
+
+    @field_validator("api_keys")
+    @classmethod
+    def validate_api_keys(cls, value):
+        if any(not key.get_secret_value().strip() for key in value):
+            raise ValueError("API keys must not be blank")
+        return value
 
     # Model settings
     model_id: str = Field(
