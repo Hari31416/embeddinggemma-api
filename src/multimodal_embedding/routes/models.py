@@ -1,3 +1,4 @@
+from multimodal_embedding.adapter.fake_adapter import FakeModelAdapter
 from fastapi import APIRouter, Request
 
 from multimodal_embedding.config import settings
@@ -27,6 +28,7 @@ async def list_models(request: Request) -> ModelsResponse:
     )
 
     info = ModelInfo(
+        test_mode=isinstance(adapter, FakeModelAdapter),
         id=adapter.model_id,
         revision=adapter.revision,
         actual_device=adapter.actual_device,

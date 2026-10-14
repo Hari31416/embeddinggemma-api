@@ -10,6 +10,7 @@ def test_list_models(client: TestClient) -> None:
     assert len(data["data"]) == 1
 
     model_info = data["data"][0]
+    assert model_info["test_mode"] is True
     assert model_info["id"] == "google/embeddinggemma-2"
     assert model_info["actual_device"] == "cpu"
     assert model_info["supported_inputs"] == ["text", "image", "audio", "video"]

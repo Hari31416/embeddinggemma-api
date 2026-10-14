@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from typing import Literal
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,9 +25,9 @@ class Settings(BaseSettings):
         default="914f7f89142e33e77833254d9c9b90c3cef7303b",
         description="Model revision or commit hash",
     )
-    device: Literal["cpu", "mps", "auto"] = Field(
+    device: Literal["cpu", "mps", "cuda", "auto"] = Field(
         default="auto",
-        description="Target compute device: cpu, mps, or auto",
+        description="Target compute device: cpu, mps, cuda, or auto",
     )
     torch_dtype: Literal["float32", "bfloat16"] = Field(
         default="float32",
@@ -113,6 +113,12 @@ class Settings(BaseSettings):
         le=8192,
         description="Context window budget shared across all modalities",
     )
+
+    @field_validator("vision_max_soft_tokens", "video_max_soft_tokens", mode="before")
+    @classmethod
+    def parse_soft_token_budget(cls, value):
+        # Environment variables are strings; Literal[int] does not coerce them.
+        return int(value) if isinstance(value, str) else value
 
 
 settings = Settings()

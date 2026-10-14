@@ -308,3 +308,11 @@ def test_video_frame_group_cap(temp_upload_dir):
             },
         )
     assert response.status_code == 413
+
+
+def test_visual_token_budgets_accept_environment_strings(monkeypatch):
+    monkeypatch.setenv("VISION_MAX_SOFT_TOKENS", "280")
+    monkeypatch.setenv("VIDEO_MAX_SOFT_TOKENS", "140")
+    settings = Settings(_env_file=None)
+    assert settings.vision_max_soft_tokens == 280
+    assert settings.video_max_soft_tokens == 140

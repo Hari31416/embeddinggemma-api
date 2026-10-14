@@ -90,7 +90,7 @@ Key configuration options:
 
 - `HOST`: Host interface to bind (default: `127.0.0.1`).
 - `PORT`: Port to listen on (default: `8000`).
-- `DEVICE`: Target compute device: `cpu`, `mps`, or `auto` (default: `auto`).
+- `DEVICE`: Target compute device: `cpu`, `mps`, `cuda`, or `auto` (default: `auto`). Auto prefers MPS, then CUDA, then CPU. Explicit MPS or CUDA requests fall back to CPU when unavailable; `/health/ready` reports `actual_device` and `device_fallback`.
 - `TORCH_DTYPE`: Numerical precision: `float32` or `bfloat16` (default: `float32`).
 - `USE_FAKE_ADAPTER`: Set `true` to use mock adapter for fast testing without loading weights (default: `false`).
 - `MAX_CONCURRENCY`: Concurrency limit for active inference (default: `1`).
@@ -182,6 +182,7 @@ Response `200 OK`:
   "data": [
     {
       "id": "google/embeddinggemma-2",
+      "test_mode": false,
       "revision": "914f7f89142e33e77833254d9c9b90c3cef7303b",
       "actual_device": "mps",
       "requested_device": "auto",
@@ -413,13 +414,13 @@ uv run python scripts/client_example.py http://127.0.0.1:8000
 
 This repository is checked out at `search-anything/embeddinggemma-api` as a Git submodule. For a fresh parent checkout, run `git submodule update --init --recursive`.
 
-The default model revision is pinned to `914f7f89142e33e77833254d9c9b90c3cef7303b`, matching the worker's existing index. Clients must check `/v1/models` for the expected model, revision, and 768-dimensional output before using the service with that index.
+The default model revision is pinned to `914f7f89142e33e77833254d9c9b90c3cef7303b`, matching the worker's existing index. Clients must check `/v1/models` for `test_mode: false`, the expected model, revision, and 768-dimensional output before using the service with that index.
 
 Worker-generated document text already contains `title: ... | text: ...`. Send it with `prompt_mode: "none"`. Plain query text uses `task: "query"` with `prompt_mode: "auto"`. For worker-prepared media and combined inputs, use `prompt_mode: "none"` to match existing embeddings. Upload audio windows of at most 30 seconds. Upload prepared images individually and reference them in a `video_frames` part to preserve the worker's selected frame order.
 
 Keep the pinned tokenizer in the worker for token counting and offsets used by chunk planning. The service performs the final context-budget check with the model processor. Tokenization does not require loading model weights.
 
-The service contract is ready for an HTTP client; the parent worker still uses its local adapter until that client is configured. Query prioritization and cross-request dynamic batching are not implemented.
+The parent worker now uses this service through its HTTP adapter by default. Set `SEARCH_EMBEDDING_API_URL` in the parent project; `make start-worker` starts the local service when needed. The worker retains its own priority scheduler. Global query prioritization and cross-request dynamic batching are not implemented in the service.
 
 Run the regression tests, including real CPU inference and parity with the parent worker adapter:
 

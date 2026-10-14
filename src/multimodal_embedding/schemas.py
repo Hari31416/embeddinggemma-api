@@ -44,6 +44,7 @@ class ConfiguredLimits(BaseModel):
 
 
 class ModelInfo(BaseModel):
+    test_mode: bool
     id: str
     revision: str
     actual_device: str
