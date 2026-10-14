@@ -15,6 +15,9 @@ async def list_models(request: Request) -> ModelsResponse:
     limits = ConfiguredLimits(
         max_batch_size=cfg.max_batch_size,
         max_upload_bytes=cfg.max_upload_bytes,
+        max_embedding_request_bytes=cfg.max_embedding_request_bytes,
+        url_download_max_bytes=cfg.url_download_max_bytes,
+        url_download_timeout_seconds=cfg.url_download_timeout_seconds,
         max_image_pixels=cfg.max_image_pixels,
         max_audio_duration_seconds=cfg.max_audio_duration_seconds,
         max_video_duration_seconds=cfg.max_video_duration_seconds,

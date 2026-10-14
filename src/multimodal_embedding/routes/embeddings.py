@@ -1,6 +1,13 @@
+import asyncio
+import anyio
 import logging
 import time
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
+
+from multimodal_embedding.embedding_request import (
+    parse_embedding_request,
+    request_body_schema,
+)
 
 from multimodal_embedding.adapter.base import PreparedItem, PreparedMedia
 from multimodal_embedding.config import settings
@@ -9,7 +16,6 @@ from multimodal_embedding.exceptions import (
     PayloadTooLargeError,
 )
 from multimodal_embedding.schemas import (
-    EmbeddingRequest,
     EmbeddingResponse,
     ItemEmbedding,
     MediaPart,
@@ -23,11 +29,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1", tags=["embeddings"])
 
 
-@router.post("/embeddings", response_model=EmbeddingResponse)
+@router.post(
+    "/embeddings", response_model=EmbeddingResponse, openapi_extra=request_body_schema()
+)
 async def create_embeddings(
     request: Request,
-    payload: EmbeddingRequest,
+    inputs: tuple = Depends(parse_embedding_request),
 ) -> EmbeddingResponse:
+    payload, resolver = inputs
     storage = request.app.state.storage
     adapter = request.app.state.adapter
     queue_manager = request.app.state.queue_manager
@@ -69,7 +78,7 @@ async def create_embeddings(
                     )
                 )
             elif isinstance(part, MediaPart):
-                record = await storage.get_upload(part.upload_id)
+                record = await resolver.resolve(part)
                 media_list.append(
                     PreparedMedia(
                         upload_id=record.upload_id,
@@ -112,13 +121,26 @@ async def create_embeddings(
         )
 
     # 3. Execute inference via queue manager
-    embeddings = await queue_manager.run(
-        adapter.encode,
-        prepared_items,
-        task=payload.task,
-        truncate_dim=payload.truncate_dim,
-        prompt_mode=payload.prompt_mode,
+    inference = asyncio.create_task(
+        queue_manager.run(
+            adapter.encode,
+            prepared_items,
+            task=payload.task,
+            truncate_dim=payload.truncate_dim,
+            prompt_mode=payload.prompt_mode,
+        )
     )
+    try:
+        embeddings = await asyncio.shield(inference)
+    except asyncio.CancelledError:
+        # The model thread may still be reading media. Keep request-local files
+        # until it finishes, before the dependency removes them.
+        with anyio.CancelScope(shield=True):
+            try:
+                await inference
+            except Exception:
+                logger.warning("Inference failed after request cancellation.")
+        raise
 
     duration_ms = (time.time() - t0) * 1000.0
 

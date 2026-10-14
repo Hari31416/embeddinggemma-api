@@ -213,6 +213,12 @@ class StorageManager:
         except OSError as e:
             logger.warning("Failed to remove file %s: %s", record.filepath, e)
 
+    async def delete_upload(self, upload_id: str) -> None:
+        async with self._lock:
+            record = self.uploads.get(upload_id)
+            if record is not None:
+                self._remove_record(record)
+
     async def cleanup_expired(self) -> int:
         now = time.time()
         to_delete: list[UploadRecord] = []

@@ -97,6 +97,10 @@ Key configuration options:
 - `MAX_QUEUE_SIZE`: Maximum pending inference jobs before rejecting requests with 503 (default: `10`).
 - `MAX_BATCH_SIZE`: Maximum items per embedding request (default: `32`).
 - `MAX_UPLOAD_BYTES`: Maximum size for uploaded media in bytes (default: `52428800` = 50 MB).
+- `MAX_EMBEDDING_REQUEST_BYTES`: Total embeddings request body limit, including multipart overhead or base64 expansion (default: `104857600` = 100 MB).
+- `URL_DOWNLOAD_MAX_BYTES`: Per-URL download limit, also capped by `MAX_UPLOAD_BYTES` (default: `52428800` = 50 MB).
+- `URL_DOWNLOAD_TIMEOUT_SECONDS`: Total download deadline including DNS, connection, headers, and body (default: `20`).
+- `URL_ALLOWED_HOSTS`: Optional exact hostname allowlist as a JSON array, for example `["media.example.com","bucket.s3.amazonaws.com"]`. Empty allows public HTTPS destinations. Private/reserved IPs are always blocked.
 - `UPLOAD_TTL_SECONDS`: Upload expiration in seconds (default: `300`).
 - `MAX_IMAGE_PIXELS`: Maximum decoded image pixels (default: `16777216` = 4096x4096).
 - `MAX_AUDIO_DURATION_SECONDS`: Maximum allowed audio duration (default: `30.0`, cannot exceed the model window).
@@ -249,11 +253,65 @@ Request Body:
   - `id` (required): Unique item identifier.
   - `parts` (required): Ordered list of content parts.
     - Text part: `{"type": "text", "text": "..."}`
-    - Media part: `{"type": "media", "upload_id": "<upload_id>"}`
+    - Media part: `{"type": "media", ...}` with exactly one source: `upload_id`, `file`, `file_url`, or `file_data`.
+    - `file`: The name of a multipart file field in this request.
+    - `file_url`: An HTTPS media URL, preferably a short-lived signed URL.
+    - `file_data`: A base64 data URL, or raw base64 with `content_type`.
+    - `filename` and `content_type`: Optional hints for URL/base64 media. Data URLs supply their own media type.
 - `task` (optional): `query` or `document` (default: `document`).
 - `prompt_mode` (optional): `auto` applies the model's query/document prompt; `none` accepts already formatted text without adding another prompt.
 - Video frame part: `{"type": "video_frames", "upload_ids": ["<image_upload_id>", "<image_upload_id>"]}`. Image uploads are treated as one ordered video sequence, without resampling.
 - `truncate_dim` (optional): `768`, `512`, `256`, or `128` for MRL truncation with re-normalization.
+
+#### One-call media inputs
+
+Send `application/json` for upload IDs, URLs, base64, and text. Send `multipart/form-data` with one text field named `payload` containing the same JSON request and named binary fields for files. Use multipart for local files. Prefer short-lived signed URLs for remote media. Base64 is convenient for small images but adds about 33% to the wire size.
+
+The `file_url` and `file_data` names follow [OpenAI's file inputs](https://developers.openai.com/api/docs/guides/file-inputs). Base64 data URLs are also used by [Cohere's embedding API](https://docs.cohere.com/docs/embeddings). This API retains its existing items/parts structure and embedding response.
+
+Multipart example, combining text and a local image in one call:
+
+```bash
+curl http://127.0.0.1:8000/v1/embeddings \
+  -F 'payload={"items":[{"id":"photo","parts":[{"type":"text","text":"A red flower"},{"type":"media","file":"photo"}]}],"truncate_dim":256}' \
+  -F 'photo=@tests/fixtures/sample.png;type=image/png'
+```
+
+`file` references the form field name, not the filename. Multiple items can reference the same field. File field names must be unique and every supplied file must be referenced. The `payload` field is reserved. A request can mix multipart references with upload IDs, URLs, base64, and text. The existing `video_frames.upload_ids` contract remains available for prepared image sequences.
+
+URL example:
+
+```json
+{
+  "items": [{
+    "id": "remote-photo",
+    "parts": [{
+      "type": "media",
+      "file_url": "https://media.example.com/photo.png?signature=..."
+    }]
+  }]
+}
+```
+
+URLs must use HTTPS on port 443, without embedded credentials or fragments. All resolved addresses must be public. The connection pins a validated IP while verifying TLS against the original hostname. Redirects, compressed responses, and environment proxies are disabled. Signed query strings are preserved for the download and omitted from API error messages. The API does not enforce URL expiration, so configure short-lived signatures at the source. Hosts can be restricted further with `URL_ALLOWED_HOSTS`.
+
+Base64 example:
+
+```json
+{
+  "items": [{
+    "id": "inline-photo",
+    "parts": [{
+      "type": "media",
+      "file_data": "data:image/png;base64,<base64 bytes>"
+    }]
+  }]
+}
+```
+
+For raw base64, use `"file_data":"<base64 bytes>","content_type":"image/png"`. Base64 must use the standard alphabet and padding. `filename` is optional; the API infers a suffix from the media type when needed.
+
+All sources pass through the existing image/audio/video decoder and size, pixel, and duration checks. Multipart and base64 media use `MAX_UPLOAD_BYTES`; URLs use the smaller of that limit and `URL_DOWNLOAD_MAX_BYTES`. Request-local files are deleted after inference or failure and are not returned as reusable upload IDs. Use `/v1/uploads` when you need to reuse media across calls.
 
 #### Example 1: Text Query
 

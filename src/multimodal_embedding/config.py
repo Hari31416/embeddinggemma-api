@@ -61,6 +61,14 @@ class Settings(BaseSettings):
         ge=1024,
         description="Maximum upload file size in bytes",
     )
+    max_embedding_request_bytes: int = Field(default=104857600, ge=1024)
+    url_download_timeout_seconds: float = Field(default=20.0, gt=0)
+    url_download_max_bytes: int = Field(default=52428800, ge=1)
+    url_allowed_hosts: list[str] = Field(
+        default_factory=list,
+        description="Optional exact HTTPS hostname allowlist; empty allows public hosts",
+    )
+
     upload_ttl_seconds: int = Field(
         default=300,  # 5 minutes
         ge=1,

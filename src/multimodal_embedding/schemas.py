@@ -1,5 +1,5 @@
 from typing import Annotated, Any, Literal, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # Error Responses
@@ -31,6 +31,9 @@ class ReadyResponse(BaseModel):
 class ConfiguredLimits(BaseModel):
     max_batch_size: int
     max_upload_bytes: int
+    max_embedding_request_bytes: int
+    url_download_max_bytes: int
+    url_download_timeout_seconds: float
     max_image_pixels: int
     max_audio_duration_seconds: float
     max_video_duration_seconds: float
@@ -78,7 +81,38 @@ class TextPart(BaseModel):
 
 class MediaPart(BaseModel):
     type: Literal["media"]
-    upload_id: str = Field(min_length=1)
+    model_config = {"extra": "forbid"}
+
+    upload_id: str | None = Field(default=None, min_length=1)
+    file: str | None = Field(
+        default=None, min_length=1, description="Multipart field name"
+    )
+    file_url: str | None = Field(default=None, min_length=1)
+    file_data: str | None = Field(
+        default=None, min_length=1, description="Base64 data URL or raw base64"
+    )
+    filename: str | None = Field(default=None, min_length=1)
+    content_type: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def one_source(self):
+        if (
+            sum(
+                value is not None
+                for value in (self.upload_id, self.file, self.file_url, self.file_data)
+            )
+            != 1
+        ):
+            raise ValueError(
+                "Media requires exactly one of upload_id, file, file_url, file_data."
+            )
+        if (
+            self.file_data
+            and not self.file_data.startswith("data:")
+            and not self.content_type
+        ):
+            raise ValueError("Raw base64 requires content_type.")
+        return self
 
 
 class VideoFramesPart(BaseModel):
