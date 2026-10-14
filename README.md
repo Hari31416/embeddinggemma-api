@@ -248,6 +248,14 @@ Response `200 OK`:
 
 Computes dense vector representations for a batch of items.
 
+> [!IMPORTANT]
+> **The API handles text prefixes by default. Send plain, unprefixed text.**
+> `prompt_mode` defaults to `"auto"`. For ingestion, use `task: "document"` (the default); the API applies the model's `Document` prompt, `title: none | text: `. For search, explicitly set `task: "query"`; the API applies `SearchQuery`, `task: search result | query: `.
+>
+> If you already apply a model prefix yourself, including a custom document title, set `prompt_mode: "none"` to avoid adding the prefix twice. The API does not detect or remove existing prefixes.
+>
+> Google's [EmbeddingGemma 2 task-prefix guide](https://ai.google.dev/gemma/docs/embeddinggemma/inference-embeddinggemma-with-sentence-transformers#optimizing_embeddings_with_task_prompts) explains why retrieval uses different prefixes for queries and documents, lists the prefix formats, and shows how to apply the model's built-in prompts. This API performs that prompt application for you when `prompt_mode: "auto"`.
+
 Request Body:
 
 - `items` (required): List of items to embed (max `max_batch_size`).
@@ -260,7 +268,7 @@ Request Body:
     - `file_data`: A base64 data URL, or raw base64 with `content_type`.
     - `filename` and `content_type`: Optional hints for URL/base64 media. Data URLs supply their own media type.
 - `task` (optional): `query` or `document` (default: `document`).
-- `prompt_mode` (optional): `auto` applies the model's query/document prompt; `none` accepts already formatted text without adding another prompt.
+- `prompt_mode` (optional): `auto` (default) applies the model's query/document prompt; `none` accepts already formatted text without adding another prompt.
 - Video frame part: `{"type": "video_frames", "upload_ids": ["<image_upload_id>", "<image_upload_id>"]}`. Image uploads are treated as one ordered video sequence, without resampling.
 - `truncate_dim` (optional): `768`, `512`, `256`, or `128` for MRL truncation with re-normalization.
 
