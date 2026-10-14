@@ -27,18 +27,57 @@ The model has 740M total parameters (270M text backbone, 170M vision encoder, 30
 - Checkpoint size: Approximately 1.45 GB (`model.safetensors` is 1.42 GB).
 - Hugging Face credentials: Read optionally from `HF_TOKEN` or `HUGGING_FACE_HUB_TOKEN` without logging token values.
 
-### Observed Verification on macOS (Apple Silicon M-Series)
+### API performance on Apple M4 Pro
 
-- Model load time: ~7.2 seconds on CPU, ~6.8 seconds on MPS.
-- Memory footprint: ~1.5 GB in float32.
-- Text query inference latency: ~88 ms (CPU), ~120 ms (MPS).
-- Text document inference latency: ~30 ms (CPU), ~50 ms (MPS).
-- Image inference latency (64x64): ~712 ms (CPU), ~1450 ms (MPS).
-- Audio inference latency (1.0s 16kHz): ~524 ms (CPU), ~1800 ms (MPS).
-- Video inference latency (2 frames): ~336 ms (CPU), ~640 ms (MPS).
-- Combined input latency (text + image + audio): ~1219 ms (CPU), ~658 ms (MPS).
-- Mixed batch latency (5 items): ~2888 ms (CPU), ~2636 ms (MPS).
-- Normalization: L2 unit-length verified across all modalities and MRL truncations (768, 512, 256, 128).
+Measured on 2026-10-14 with an Apple M4 Pro, 24 GiB RAM, macOS 27.0.1, Python 3.14.5, PyTorch 2.14.1, Sentence Transformers 6.1.0, and Transformers 5.19.0. These measurements replace the earlier one-off verification timings.
+
+Each device/precision configuration ran in a fresh process against the pinned model revision `914f7f89142e33e77833254d9c9b90c3cef7303b`. Each workload had **3 warm-up requests followed by 20 measured requests**, with concurrency 1, 8 CPU intra-op threads, and 1 inter-op thread. MPS was explicitly synchronized before and after each timed request; device fallback was rejected.
+
+Timing uses `time.perf_counter()` around the full `POST /v1/embeddings` request through FastAPI's in-process `TestClient`. It includes multipart parsing, request-local media staging, validation, model preprocessing, inference, normalization, and response serialization. It excludes model loading, fixture preparation, network transport, and the client's response JSON parsing. Inputs use `prompt_mode: "auto"`, 768-dimensional output, 280 image soft tokens, and 140 video soft tokens per frame.
+
+**Latency in milliseconds, median / p95. Lower is faster.** Batch rows measure the entire request, not one item.
+
+| Workload                                    |     CPU float32 |     MPS float32 |    MPS bfloat16 |
+| ------------------------------------------- | --------------: | --------------: | --------------: |
+| Short text query                            |     30.8 / 34.3 |     24.8 / 25.8 |     27.6 / 28.6 |
+| Text document, 512 words                    |   174.5 / 177.9 |   124.2 / 125.5 |   100.0 / 101.1 |
+| Text batch, 8 × 512 words                   | 1080.0 / 1084.0 |   888.3 / 892.2 |   679.5 / 682.9 |
+| Synthetic image, 64 × 64                    |   684.8 / 713.9 |   391.0 / 392.5 |   341.3 / 350.3 |
+| Synthetic audio, 1 second                   |   477.5 / 481.0 |     55.5 / 58.2 |     58.5 / 59.7 |
+| Prepared video, 2 × 64 × 64 frames          |   567.4 / 575.5 |   340.8 / 345.7 |   306.6 / 312.3 |
+| Apollo 11 image, 805 × 1024                 |   692.1 / 710.5 |   403.2 / 405.7 |   352.1 / 353.6 |
+| Apollo 11 audio, 10 seconds                 |   642.7 / 652.4 |   133.2 / 137.1 |   128.9 / 130.1 |
+| Combined text + Apollo image + Apollo audio | 1307.7 / 1377.7 |   528.4 / 530.2 |   465.8 / 467.7 |
+| Mixed batch, 5 items                        | 3296.0 / 3528.7 | 1709.0 / 1728.4 | 1426.6 / 1431.6 |
+
+The synthetic image is a solid-color PNG; the synthetic audio is a 440 Hz tone. Both audio inputs are mono 16 kHz PCM WAV. Prepared video uses two copies of the synthetic image through `video_frames`; it does not measure MP4 decoding. The Apollo image is `images/624073main_1969-04-04_full.jpg`, resized to fit within 1024 × 1024. Apollo audio uses the first 10 seconds of `audio/590333main_ringtone_eagleHasLanded_extended.mp3`, resampled before timing. The mixed batch contains one 512-word document, the Apollo image, the Apollo audio, the prepared video, and the combined input.
+
+**Batch throughput in items per second. Higher is faster.** Computed as total items divided by summed measured request durations.
+
+| Workload             | CPU float32 | MPS float32 | MPS bfloat16 |
+| -------------------- | ----------: | ----------: | -----------: |
+| Text batch, 8 items  |        7.41 |        9.00 |        11.77 |
+| Mixed batch, 5 items |        1.49 |        2.92 |         3.50 |
+
+MPS float32 was faster than CPU float32 in every measured workload, including about 4.8× faster Apollo audio and 1.9× faster mixed batches. MPS bfloat16 further improved document and batch performance, but was slightly slower for short queries and one-second audio. These are observations from one desktop run per configuration, with background activity uncontrolled; p95 from 20 requests is only an estimate. They do not establish performance on other chips or retrieval quality. CPU bfloat16 was not benchmarked.
+
+All 690 requests, including warm-ups, returned finite 768-dimensional vectors with L2 norm error below `1e-3`; the maximum observed error was `9.1e-8`. This benchmark does not evaluate retrieval relevance or precision agreement between configurations.
+
+Reproduce from this repository root, with the parent checkout's optional Apollo 11 dataset available:
+
+```bash
+for config in cpu:float32 mps:float32 mps:bfloat16; do
+  device=${config%:*}
+  dtype=${config#*:}
+  HF_HUB_OFFLINE=1 uv run python -m scripts.benchmark_api \
+    --device "$device" --dtype "$dtype" \
+    --warmup 3 --repeats 20 --threads 8 \
+    --dataset ../datasets/apollo-11 \
+    --output "benchmarks/apple-m4-pro/$device-$dtype.json"
+done
+```
+
+Download the pinned model before running offline. Omit `--dataset` to run only synthetic inputs; combined and mixed cases then use synthetic media and are not directly comparable to the Apollo results above. The [benchmark script](scripts/benchmark_api.py) saves raw timings, package versions, model settings, and source/prepared-media SHA-256 hashes. Recorded results: [CPU float32](benchmarks/apple-m4-pro/cpu-float32.json), [MPS float32](benchmarks/apple-m4-pro/mps-float32.json), [MPS bfloat16](benchmarks/apple-m4-pro/mps-bfloat16.json).
 
 ## Installation and Setup
 
